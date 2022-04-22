@@ -4,10 +4,16 @@ from brownie import (
     accounts,
     MockV3Aggregator,
     VRFCoordinatorV2Mock,
+    LinkToken,
+    Contract,
 )
 
 
-FORKED_LOCAL_ENVIRONMENTS = ["mainnet-fork"]
+FORKED_LOCAL_ENVIRONMENTS = [
+    "mainnet-fork",
+    "mainnet-fork-infura",
+    "rinkeby-fork-infura",
+]
 LOCAL_BLOCKHAIN_ENVIRONMENTS = ["ganache-local", "development"]
 
 
@@ -22,9 +28,13 @@ def get_account():
         network.show_active() in FORKED_LOCAL_ENVIRONMENTS
         or network.show_active() in LOCAL_BLOCKHAIN_ENVIRONMENTS
     ):
-        return accounts[0]
+        account = accounts[0]
     else:
-        return accounts.add(config["wallets"]["from_key"])
+        account = accounts.add(config["wallets"]["from_key"])
+    print(
+        f"The used account is: {account.address} and the balance is {account.balance()}"
+    )
+    return account
 
 
 def deploy_mocks():
@@ -38,25 +48,40 @@ def deploy_mocks():
         print("Deploying VRFCoordinatorV2Mock")
         VRFCoordinatorV2Mock.deploy(BASE_FEE, GAS_PRICE_LINK, {"from": account})
         print("VRFCoordinatorV2Mock deployed successfully.")
+    if len(LinkToken) == 0:
+        print("Deploying LinkToken")
+        LinkToken.deploy({"from": account})
+        print("LinkToken deployed successfully.")
     print("Mocks deployed successfully.")
+    mocks = {
+        "price_feed": MockV3Aggregator[-1],
+        "vrf_coordinator": VRFCoordinatorV2Mock[-1],
+        "link_token": LinkToken[-1],
+        "key_hash": config["networks"]["mainnet-fork"]["key_hash"],
+    }
+    print(f"Mocks: {mocks}")
+    return mocks
 
 
-# TODO remove the hardcoded network on key_hash
 def get_interfaces():
     if network.show_active() in LOCAL_BLOCKHAIN_ENVIRONMENTS:
-        deploy_mocks()
-        return {
-            "price_feed": MockV3Aggregator[-1].address,
-            "vrf_coordinator": VRFCoordinatorV2Mock[-1].address,
-            "key_hash": config["networks"]["mainnet-fork"]["key_hash"],
-        }
+        return deploy_mocks()
     else:
         return {
-            "price_feed": config["networks"][network.show_active()][
-                "eth_usd_price_feed"
-            ],
-            "vrf_coordinator": config["networks"][network.show_active()][
-                "vrf_coordinator"
-            ],
-            "key_hash": config["networks"]["mainnet-fork"]["key_hash"],
+            "price_feed": Contract.from_abi(
+                MockV3Aggregator._name,
+                config["networks"][network.show_active()]["eth_usd_price_feed"],
+                abi=MockV3Aggregator.abi,
+            ),
+            "vrf_coordinator": Contract.from_abi(
+                VRFCoordinatorV2Mock._name,
+                config["networks"][network.show_active()]["vrf_coordinator"],
+                abi=VRFCoordinatorV2Mock.abi,
+            ),
+            "link_token": Contract.from_abi(
+                LinkToken._name,
+                config["networks"][network.show_active()]["link_token"],
+                abi=LinkToken.abi,
+            ),
+            "key_hash": config["networks"][network.show_active()]["key_hash"],
         }
